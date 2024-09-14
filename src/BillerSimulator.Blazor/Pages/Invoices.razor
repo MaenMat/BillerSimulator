@@ -1,0 +1,324 @@
+
+
+@page "/invoices"
+
+@attribute [Authorize(BillerSimulatorPermissions.Invoices.Default)]
+@using BillerSimulator.Invoices
+@using BillerSimulator.Localization
+@using BillerSimulator.Shared
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.Extensions.Localization
+@using Microsoft.AspNetCore.Components.Web
+@using Blazorise
+@using Blazorise.Components
+@using Blazorise.DataGrid
+@using Volo.Abp.BlazoriseUI
+@using Volo.Abp.BlazoriseUI.Components
+@using Volo.Abp.ObjectMapping
+@using Volo.Abp.AspNetCore.Components.Messages
+@using Volo.Abp.AspNetCore.Components.Web.Theming.Layout
+@using BillerSimulator.Permissions
+@using Microsoft.AspNetCore.Components
+@using Volo.Abp.AspNetCore.Components.Web
+@using Volo.Abp.Http.Client
+@inherits BillerSimulatorComponentBase
+@inject IInvoicesAppService InvoicesAppService
+@inject IUiMessageService UiMessageService
+@inject IRemoteServiceConfigurationProvider RemoteServiceConfigurationProvider
+@inject NavigationManager NavigationManager
+@using BillerSimulator.Invoices
+
+
+@* ************************* PAGE HEADER ************************* *@
+<PageHeader Title="@L["Invoices"]" BreadcrumbItems="BreadcrumbItems" Toolbar="Toolbar">
+
+</PageHeader>
+
+@* ************************* SEARCH ************************* *@
+<Card>
+    <CardBody>
+        <Form id="InvoiceSearchForm" class="mb-3">
+            <Addons>
+                <Addon AddonType="AddonType.Body">
+                    <TextEdit @bind-Text="@Filter.FilterText"
+                              Autofocus="true"
+                              Placeholder="@L["Search"]">
+                    </TextEdit>
+                </Addon>
+                <Addon AddonType="AddonType.End">
+                    <SubmitButton Form="InvoiceSearchForm" Clicked="GetInvoicesAsync">
+                        <Icon Name="IconName.Search" Class="me-1"></Icon>@L["Search"]
+                    </SubmitButton>
+                </Addon>
+            </Addons>
+        </Form>
+    </CardBody>
+</Card>
+
+@* ************************* DATA GRID ************************* *@
+<Card>
+    <CardBody>
+        <DataGrid TItem="InvoiceWithNavigationPropertiesDto"
+                  Data="InvoiceList"
+                  ReadData="OnDataGridReadAsync"
+                  TotalItems="TotalCount"
+                  ShowPager="true"
+                  Responsive="true"
+                  PageSize="PageSize">
+            <DataGridColumns>
+                <DataGridEntityActionsColumn TItem="InvoiceWithNavigationPropertiesDto" @ref="@EntityActionsColumn">
+                    <DisplayTemplate>
+                        <EntityActions TItem="InvoiceWithNavigationPropertiesDto" EntityActionsColumn="@EntityActionsColumn">
+                            <EntityAction TItem="InvoiceWithNavigationPropertiesDto"
+                                          Visible="@CanEditInvoice"
+                                          Clicked="async () => await OpenEditInvoiceModalAsync(context)"
+                                          Text="@L["Edit"]"></EntityAction>
+                            <EntityAction TItem="InvoiceWithNavigationPropertiesDto"
+                                          Visible="@CanDeleteInvoice"
+                                          Clicked="() => DeleteInvoiceAsync(context)"
+                                          ConfirmationMessage="@(()=> L["DeleteConfirmationMessage"])"
+                                          Text="@L["Delete"]"></EntityAction>
+                        </EntityActions>
+                    </DisplayTemplate>
+                </DataGridEntityActionsColumn>
+               
+              <DataGridColumn TItem="InvoiceWithNavigationPropertiesDto"
+                      Field="Invoice.InvoiceNumber"
+                      Caption="@L["InvoiceNumber"]">
+              </DataGridColumn>
+
+              <DataGridColumn TItem="InvoiceWithNavigationPropertiesDto"
+                      Field="Invoice.Amount"
+                      Caption="@L["Amount"]">
+              </DataGridColumn>
+
+              <DataGridColumn TItem="InvoiceWithNavigationPropertiesDto"
+                      Field="Invoice.DueDate"
+                      Caption="@L["DueDate"]">
+                  <DisplayTemplate>
+                        @context.Invoice.DueDate.ToShortDateString()
+                  </DisplayTemplate>
+              </DataGridColumn>
+
+              <DataGridColumn TItem="InvoiceWithNavigationPropertiesDto"
+                      Field="Invoice.PaidDate"
+                      Caption="@L["PaidDate"]">
+                  <DisplayTemplate>
+                        @context.Invoice.PaidDate.ToShortDateString()
+                  </DisplayTemplate>
+              </DataGridColumn>
+
+              <DataGridColumn TItem="InvoiceWithNavigationPropertiesDto"
+                      Field="Invoice.InvoiceStatus"
+                      Caption="@L["InvoiceStatus"]">
+                    <DisplayTemplate>
+                        @L[$"Enum:InvoiceStatus.{context.Invoice.InvoiceStatus.ToString("d")}"]
+                    </DisplayTemplate>
+              </DataGridColumn>
+
+
+              <DataGridColumn TItem="InvoiceWithNavigationPropertiesDto"
+                      Field="Customer.FullName"
+                      Caption="@L["Customer"]">
+              </DataGridColumn>
+
+            </DataGridColumns>
+        </DataGrid>
+    </CardBody>
+</Card>
+
+@* ************************* CREATE MODAL ************************* *@
+<Modal @ref="CreateInvoiceModal" Closing="@CreateInvoiceModal.CancelClosingModalWhenFocusLost">
+    <ModalContent Centered="true">
+        <Form id="CreateInvoiceForm">
+            <ModalHeader>
+                <ModalTitle>@L["NewInvoice"]</ModalTitle>
+                <CloseButton Clicked="CloseCreateInvoiceModalAsync" />
+            </ModalHeader>
+            <ModalBody>
+                <Validations @ref="@NewInvoiceValidations"
+                            Mode="ValidationMode.Auto"
+                            Model="@NewInvoice"
+                            ValidateOnLoad="false">
+
+
+                    <Validation>
+                        <Field>
+                            <FieldLabel>@L["Amount"]</FieldLabel>
+                            <NumericPicker TValue="double"  GroupSeparator="," @bind-Value="@NewInvoice.Amount"   >
+                                <Feedback>
+                                    <ValidationError />
+                                </Feedback>
+                             </NumericPicker>
+                        </Field>
+                     </Validation>
+
+
+                    <Validation>
+                        <Field>
+                            <FieldLabel>@L["DueDate"]</FieldLabel>
+                            <DateEdit TValue="DateTime" InputMode="DateInputMode.DateTime" @bind-Date="@NewInvoice.DueDate" >
+                               <Feedback>
+                                    <ValidationError />
+                                </Feedback>
+                            </DateEdit>
+                        </Field>
+                    </Validation>
+
+
+                    <Validation>
+                        <Field>
+                            <FieldLabel>@L["PaidDate"]</FieldLabel>
+                            <DateEdit TValue="DateTime" InputMode="DateInputMode.DateTime" @bind-Date="@NewInvoice.PaidDate" >
+                               <Feedback>
+                                    <ValidationError />
+                                </Feedback>
+                            </DateEdit>
+                        </Field>
+                    </Validation>
+
+
+                    <Field>
+                        <FieldLabel>@L["InvoiceStatus"]</FieldLabel>
+                        <Select TValue="InvoiceStatus" @bind-SelectedValue="@NewInvoice.InvoiceStatus" >
+                            @foreach (var itemValue in Enum.GetValues(typeof(InvoiceStatus)))
+                            {
+                                <SelectItem TValue="InvoiceStatus" Value="@((InvoiceStatus) itemValue)">
+                                    @L[$"Enum:InvoiceStatus.{((InvoiceStatus) itemValue).ToString("d")}"]
+                                </SelectItem>
+                            }
+                        </Select>
+                    </Field>
+
+
+                    <Field>
+                        <FieldLabel>@L["Customer"]</FieldLabel>
+                        <Select TValue="Guid" @bind-SelectedValue="@NewInvoice.CustomerId">
+                            @foreach (var customer in CustomersCollection)
+                            {
+                                <SelectItem TValue="Guid" Value="@customer.Id">
+                                    @customer.DisplayName
+                                </SelectItem>
+                            }
+                        </Select>
+                    </Field>
+
+
+                    
+                    
+                </Validations>
+            </ModalBody>
+            <ModalFooter>
+                <Button Color="Color.Secondary"
+                        Clicked="CloseCreateInvoiceModalAsync">
+                    @L["Cancel"]
+                </Button>
+                <SubmitButton Form="CreateInvoiceForm" Clicked="CreateInvoiceAsync" />
+            </ModalFooter>
+        </Form>
+    </ModalContent>
+</Modal>
+
+@* ************************* EDIT MODAL ************************* *@
+<Modal @ref="EditInvoiceModal" Closing="@EditInvoiceModal.CancelClosingModalWhenFocusLost">
+    <ModalContent Centered="true">
+        <Form id="EditInvoiceForm">
+            <ModalHeader>
+                <ModalTitle>@L["Update"]</ModalTitle>
+                <CloseButton Clicked="CloseEditInvoiceModalAsync" />
+            </ModalHeader>
+            <ModalBody>
+                <Validations @ref="@EditingInvoiceValidations"
+                            Mode="ValidationMode.Auto"
+                            Model="@EditingInvoice"
+                            ValidateOnLoad="false">
+                     
+                    
+                    <Validation>
+                        <Field>
+                            <FieldLabel>@L["InvoiceNumber"]</FieldLabel>
+                            <TextEdit @bind-Text="@EditingInvoice.InvoiceNumber"  >
+                                <Feedback>
+                                    <ValidationError />
+                                </Feedback>
+                            </TextEdit>
+                        </Field>
+                    </Validation>
+
+
+                    <Validation>
+                        <Field>
+                            <FieldLabel>@L["Amount"]</FieldLabel>
+                            <NumericPicker TValue="double" GroupSeparator="," @bind-Value="@EditingInvoice.Amount">
+                                <Feedback>
+                                    <ValidationError />
+                                </Feedback>
+                             </NumericPicker>
+                        </Field>
+                     </Validation>
+
+
+                    <Validation>
+                        <Field>
+                            <FieldLabel>@L["DueDate"]</FieldLabel>
+                            <DateEdit TValue="DateTime" InputMode="DateInputMode.DateTime" @bind-Date="@EditingInvoice.DueDate" >
+                               <Feedback>
+                                    <ValidationError />
+                                </Feedback>
+                            </DateEdit>
+                        </Field>
+                    </Validation>
+
+
+                    <Validation>
+                        <Field>
+                            <FieldLabel>@L["PaidDate"]</FieldLabel>
+                            <DateEdit TValue="DateTime" InputMode="DateInputMode.DateTime" @bind-Date="@EditingInvoice.PaidDate" >
+                               <Feedback>
+                                    <ValidationError />
+                                </Feedback>
+                            </DateEdit>
+                        </Field>
+                    </Validation>
+
+
+                    <Field>
+                        <FieldLabel>@L["InvoiceStatus"]</FieldLabel>
+                        <Select TValue="InvoiceStatus" @bind-SelectedValue="@EditingInvoice.InvoiceStatus" >
+                            @foreach (var itemValue in Enum.GetValues(typeof(InvoiceStatus)))
+                            {
+                                <SelectItem TValue="InvoiceStatus" Value="@((InvoiceStatus) itemValue)">
+                                    @L[$"Enum:InvoiceStatus.{((InvoiceStatus) itemValue).ToString("d")}"]
+                                </SelectItem>
+                            }
+                        </Select>
+                    </Field>
+
+
+                    <Field>
+                        <FieldLabel>@L["Customer"]</FieldLabel>
+                        <Select TValue="Guid" @bind-SelectedValue="@EditingInvoice.CustomerId">
+                            @foreach (var customer in CustomersCollection)
+                            {
+                                <SelectItem TValue="Guid" Value="@customer.Id">
+                                    @customer.DisplayName
+                                </SelectItem>
+                            }
+                        </Select>
+                    </Field>
+
+
+                    
+                    
+                </Validations>
+            </ModalBody>
+            <ModalFooter>
+                <Button Color="Color.Secondary"
+                        Clicked="CloseEditInvoiceModalAsync">
+                    @L["Cancel"]
+                </Button>
+                <SubmitButton Form="CreateInvoiceForm" Clicked="UpdateInvoiceAsync" />
+            </ModalFooter>
+        </Form>
+    </ModalContent>
+</Modal>
